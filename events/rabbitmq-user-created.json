@@ -1,0 +1,29 @@
+{
+  "eventSource": "aws:rmq",
+  "eventSourceArn": "arn:aws:mq:us-east-1:123456789012:broker:fgc-notifications-broker:b-0000-local",
+  "rmqMessagesByQueue": {
+    "notifications-lambda::/": [
+      {
+        "basicProperties": {
+          "contentType": "application/json",
+          "contentEncoding": null,
+          "headers": {},
+          "deliveryMode": 2,
+          "priority": 0,
+          "correlationId": null,
+          "replyTo": null,
+          "expiration": null,
+          "messageId": null,
+          "timestamp": null,
+          "type": null,
+          "userId": null,
+          "appId": null,
+          "clusterId": null,
+          "bodySize": 0
+        },
+        "redelivered": false,
+        "data": "eyJtZXNzYWdlVHlwZSI6WyJ1cm46bWVzc2FnZTpGZ2MuTWVzc2FnZUNvbnRyYWN0cy5FdmVudHM6VXNlckNyZWF0ZWRFdmVudCJdLCJtZXNzYWdlIjp7IklkIjoiMTExMTExMTEtMTExMS0xMTExLTExMTEtMTExMTExMTExMTExIiwiTmFtZSI6IkFuYSBUZXN0ZSIsIkVtYWlsIjoiYW5hQHRlc3RlLmNvbSIsIkNyZWF0ZWRBdCI6IjIwMjYtMDgtMjVUMjA6NTA6NTQuMDAwMDAwMFoifX0="
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fgc.Notifications.Lambda.Application/Fgc.Notifications.Lambda.Application.csproj" />
+    <Project Path="src/Fgc.Notifications.Lambda.Domain/Fgc.Notifications.Lambda.Domain.csproj" />
+    <Project Path="src/Fgc.Notifications.Lambda.EventProcessor/Fgc.Notifications.Lambda.EventProcessor.csproj" />
+    <Project Path="src/Fgc.Notifications.Lambda.HistoryApi/Fgc.Notifications.Lambda.HistoryApi.csproj" />
+    <Project Path="src/Fgc.Notifications.Lambda.Infrastructure/Fgc.Notifications.Lambda.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Fgc.Notifications.Lambda.Tests/Fgc.Notifications.Lambda.Tests.csproj" />
+  </Folder>
+</Solution>

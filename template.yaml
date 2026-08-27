@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  fgc-notifications-lambda - substitui o container fgc-notifications-api por duas funções
+  Lambda .NET 8: EventProcessor (acionada por Event Source Mapping no Amazon MQ / RabbitMQ)
+  e HistoryApi (GET /notifications via API Gateway, autorização Admin dentro da própria Lambda).
+
+Parameters:
+  JwtKey:
+    Type: String
+    NoEcho: true
+    Description: Mesma chave HS256 simétrica usada por fgc-users-api/fgc-catalog-api (Jwt:Key).
+  JwtIssuer:
+    Type: String
+    Default: Fgc.UsersAPI
+  JwtAudience:
+    Type: String
+    Default: Fgc.CatalogAPI
+
+Globals:
+  Function:
+    Runtime: dotnet8
+    MemorySize: 256
+    Timeout: 30
+
+Resources:
+  NotificationsBrokerSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"fgc-lambda-admin"}'
+        GenerateStringKey: password
+        ExcludePunctuation: true
+
+  NotificationsBroker:
+    Type: AWS::AmazonMQ::Broker
+    Properties:
+      BrokerName: fgc-notifications-broker
+      EngineType: RABBITMQ
+      EngineVersion: "3.13"
+      DeploymentMode: SINGLE_INSTANCE
+      HostInstanceType: mq.t3.micro
+      PubliclyAccessible: true
+      AutoMinorVersionUpgrade: true
+      Users:
+        - Username: !Sub "{{resolve:secretsmanager:${NotificationsBrokerSecret}:SecretString:username}}"
+          Password: !Sub "{{resolve:secretsmanager:${NotificationsBrokerSecret}:SecretString:password}}"
+
+  NotificationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FgcNotifications
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: Pk
+          AttributeType: S
+        - AttributeName: SentAtId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Pk
+          KeyType: HASH
+        - AttributeName: SentAtId
+          KeyType: RANGE
+
+  EventProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/Fgc.Notifications.Lambda.EventProcessor/
+      Handler: Fgc.Notifications.Lambda.EventProcessor::Fgc.Notifications.Lambda.EventProcessor.Function::FunctionHandler
+      Environment:
+        Variables:
+          # Vazio em produção (usa a AWS real). `sam local invoke --env-vars` só consegue
+          # sobrescrever variáveis já declaradas aqui - não injeta variáveis novas.
+          DYNAMODB_LOCAL_ENDPOINT: ""
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref NotificationsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref NotificationsBrokerSecret
+
+  EventProcessorMqMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref EventProcessorFunction
+      EventSourceArn: !GetAtt NotificationsBroker.Arn
+      Queues:
+        - notifications-lambda
+      SourceAccessConfigurations:
+        - Type: BASIC_AUTH
+          URI: !Ref NotificationsBrokerSecret
+        - Type: VIRTUAL_HOST
+          URI: "/"
+      BatchSize: 10
+
+  HistoryApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/Fgc.Notifications.Lambda.HistoryApi/
+      Handler: Fgc.Notifications.Lambda.HistoryApi::Fgc.Notifications.Lambda.HistoryApi.Function::FunctionHandler
+      Environment:
+        Variables:
+          JWT_KEY: !Ref JwtKey
+          JWT_ISSUER: !Ref JwtIssuer
+          JWT_AUDIENCE: !Ref JwtAudience
+          DYNAMODB_LOCAL_ENDPOINT: ""
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref NotificationsTable
+      Events:
+        HistoryGet:
+          Type: HttpApi
+          Properties:
+            Path: /notifications
+            Method: GET
+
+Outputs:
+  BrokerAmqpEndpoint:
+    Value: !Select [0, !GetAtt NotificationsBroker.AmqpEndpoints]
+  HistoryApiUrl:
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/notifications"
