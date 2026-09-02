@@ -56,7 +56,7 @@ samlocal deploy --resolve-s3 --stack-name fgc-notifications-lambda --capabilitie
 aws --endpoint-url=http://localhost:4566 dynamodb scan --table-name FgcNotifications
 ```
 
-Se `AWS::AmazonMQ::Broker`/`AWS::Lambda::EventSourceMapping` fizerem o `samlocal deploy` falhar (não suportados no LocalStack Community), mova os dois para um `template-broker.yaml` separado, deployado só contra a AWS real — o `template.yaml` principal deve continuar 100% deployável no LocalStack.
+`AWS::AmazonMQ::Broker`/`AWS::Lambda::EventSourceMapping` já estão separados em `template-broker.yaml` (deployado só contra a AWS real, depois do stack de `template.yaml`) — `template.yaml` principal é 100% deployável no LocalStack sem eles.
 
 ### Invocação direta do EventProcessor (trigger simulado)
 
@@ -87,8 +87,14 @@ Após cada invocação, `aws dynamodb scan --endpoint-url http://localhost:8500 
 
 ## Deploy
 
+Contra AWS real, nessa ordem (o segundo template importa outputs exportados pelo primeiro):
+
 ```bash
-sam deploy --guided --parameter-overrides JwtKey=<mesma chave HS256 de fgc-users-api>
+sam deploy --guided --template-file template.yaml --stack-name fgc-notifications-lambda \
+  --parameter-overrides JwtKey=<mesma chave HS256 de fgc-users-api>
+
+sam deploy --guided --template-file template-broker.yaml --stack-name fgc-notifications-lambda-broker \
+  --parameter-overrides MainStackName=fgc-notifications-lambda
 ```
 
-A saída `BrokerAmqpEndpoint` deve ser propagada para `RabbitMq__Host`/`RabbitMq__Port` (5671) dos `k8s/configmap.yaml` de `fgc-users-api`/`fgc-catalog-api`; a saída `HistoryApiUrl` deve ser propagada para `NOTIFICATIONS_HISTORY_URL` do Kong em `fgc-orchestration`.
+A saída `BrokerAmqpEndpoint` (do segundo stack) deve ser propagada para `RabbitMq__Host`/`RabbitMq__Port` (5671) dos `k8s/configmap.yaml` de `fgc-users-api`/`fgc-catalog-api`; a saída `HistoryApiUrl` (do primeiro stack) deve ser propagada para `NOTIFICATIONS_HISTORY_URL` do Kong em `fgc-orchestration`.

@@ -4,6 +4,9 @@ Description: >
   fgc-notifications-lambda - substitui o container fgc-notifications-api por duas funções
   Lambda .NET 8: EventProcessor (acionada por Event Source Mapping no Amazon MQ / RabbitMQ)
   e HistoryApi (GET /notifications via API Gateway, autorização Admin dentro da própria Lambda).
+  Broker Amazon MQ e EventSourceMapping ficam em template-broker.yaml (ver esse arquivo) -
+  não são suportados pelo LocalStack, então este template principal precisa continuar
+  100% deployável localmente sem eles.
 
 Parameters:
   JwtKey:
@@ -24,28 +27,6 @@ Globals:
     Timeout: 30
 
 Resources:
-  NotificationsBrokerSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      GenerateSecretString:
-        SecretStringTemplate: '{"username":"fgc-lambda-admin"}'
-        GenerateStringKey: password
-        ExcludePunctuation: true
-
-  NotificationsBroker:
-    Type: AWS::AmazonMQ::Broker
-    Properties:
-      BrokerName: fgc-notifications-broker
-      EngineType: RABBITMQ
-      EngineVersion: "3.13"
-      DeploymentMode: SINGLE_INSTANCE
-      HostInstanceType: mq.t3.micro
-      PubliclyAccessible: true
-      AutoMinorVersionUpgrade: true
-      Users:
-        - Username: !Sub "{{resolve:secretsmanager:${NotificationsBrokerSecret}:SecretString:username}}"
-          Password: !Sub "{{resolve:secretsmanager:${NotificationsBrokerSecret}:SecretString:password}}"
-
   NotificationsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -75,25 +56,6 @@ Resources:
       Policies:
         - DynamoDBWritePolicy:
             TableName: !Ref NotificationsTable
-        - Statement:
-            - Effect: Allow
-              Action:
-                - secretsmanager:GetSecretValue
-              Resource: !Ref NotificationsBrokerSecret
-
-  EventProcessorMqMapping:
-    Type: AWS::Lambda::EventSourceMapping
-    Properties:
-      FunctionName: !Ref EventProcessorFunction
-      EventSourceArn: !GetAtt NotificationsBroker.Arn
-      Queues:
-        - notifications-lambda
-      SourceAccessConfigurations:
-        - Type: BASIC_AUTH
-          URI: !Ref NotificationsBrokerSecret
-        - Type: VIRTUAL_HOST
-          URI: "/"
-      BatchSize: 10
 
   HistoryApiFunction:
     Type: AWS::Serverless::Function
@@ -117,7 +79,15 @@ Resources:
             Method: GET
 
 Outputs:
-  BrokerAmqpEndpoint:
-    Value: !Select [0, !GetAtt NotificationsBroker.AmqpEndpoints]
   HistoryApiUrl:
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/notifications"
+  EventProcessorFunctionArn:
+    Description: Consumido por template-broker.yaml (EventSourceMapping.FunctionName).
+    Value: !GetAtt EventProcessorFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-EventProcessorFunctionArn"
+  EventProcessorFunctionRoleName:
+    Description: Consumido por template-broker.yaml (para anexar a policy secretsmanager:GetSecretValue).
+    Value: !Ref EventProcessorFunctionRole
+    Export:
+      Name: !Sub "${AWS::StackName}-EventProcessorFunctionRoleName"

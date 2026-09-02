@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Recursos de Amazon MQ (broker RabbitMQ gerenciado) para fgc-notifications-lambda.
+  Separados de template.yaml porque AWS::AmazonMQ::Broker e o EventSourceMapping que
+  depende dele não são suportados pelo LocalStack (o broker é criado como stub com
+  ARN "unknown", o que derruba o stack inteiro por rollback). Deployar SOMENTE contra
+  AWS real, depois que o stack de template.yaml já estiver de pé (ele exporta o ARN/Role
+  da EventProcessorFunction que este template importa).
+
+Parameters:
+  MainStackName:
+    Type: String
+    Default: fgc-notifications-lambda
+    Description: Nome do stack criado a partir de template.yaml.
+
+Resources:
+  NotificationsBrokerSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"fgc-lambda-admin"}'
+        GenerateStringKey: password
+        ExcludePunctuation: true
+
+  NotificationsBroker:
+    Type: AWS::AmazonMQ::Broker
+    Properties:
+      BrokerName: fgc-notifications-broker
+      EngineType: RABBITMQ
+      EngineVersion: "3.13"
+      DeploymentMode: SINGLE_INSTANCE
+      HostInstanceType: mq.t3.micro
+      PubliclyAccessible: true
+      AutoMinorVersionUpgrade: true
+      Users:
+        - Username: !Sub "{{resolve:secretsmanager:${NotificationsBrokerSecret}:SecretString:username}}"
+          Password: !Sub "{{resolve:secretsmanager:${NotificationsBrokerSecret}:SecretString:password}}"
+
+  EventProcessorSecretAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EventProcessorSecretAccess
+      Roles:
+        - Fn::ImportValue: !Sub "${MainStackName}-EventProcessorFunctionRoleName"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource: !Ref NotificationsBrokerSecret
+
+  EventProcessorMqMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName:
+        Fn::ImportValue: !Sub "${MainStackName}-EventProcessorFunctionArn"
+      EventSourceArn: !GetAtt NotificationsBroker.Arn
+      Queues:
+        - notifications-lambda
+      SourceAccessConfigurations:
+        - Type: BASIC_AUTH
+          URI: !Ref NotificationsBrokerSecret
+        - Type: VIRTUAL_HOST
+          URI: "/"
+      BatchSize: 10
+
+Outputs:
+  BrokerAmqpEndpoint:
+    Value: !Select [0, !GetAtt NotificationsBroker.AmqpEndpoints]
