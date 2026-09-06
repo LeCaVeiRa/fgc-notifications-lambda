@@ -22,7 +22,16 @@ src/
   Fgc.Notifications.Lambda.HistoryApi/           # Lambda 2 (GET /notifications via API Gateway)
 tests/Fgc.Notifications.Lambda.Tests/            # xUnit + Moq
 events/                                          # payloads sintéticos (formato real aws:rmq) p/ teste local
+deploy/
+  Dockerfile                                     # roda `samlocal build && deploy` contra o LocalStack
+  bridge/                                        # Dockerfile + drain-and-invoke.py: encaminha mensagens do
+                                                  # RabbitMQ local para o EventProcessor (LocalStack não emula
+                                                  # o event source mapping de Amazon MQ, ver seção abaixo)
+  logs/                                          # Dockerfile + tail-logs.sh: acompanha logs das funções no
+                                                  # LocalStack via docker.sock
 ```
+
+`UserCreatedEvent`/`PaymentProcessedEvent` usados aqui são cópias locais mantidas manualmente em `Fgc.Notifications.Lambda.Application/Events/` — este repositório **não** referencia o pacote NuGet compartilhado `Fgc.MessageContracts` (sem `nuget.config`/`LocalPackages` próprios), diferente de `fgc-users-api`/`fgc-catalog-api`/`fgc-payments-api`. Se a forma desses eventos mudar no pacote compartilhado, é preciso replicar a mudança aqui manualmente.
 
 A lógica de negócio foi portada de `fgc-notifications-api/.../Api/Consumers/*` (a versão que de fato chama `INotificationService` — o container antigo tinha um segundo conjunto de consumers em `Application/Consumers/*` que só logava e nunca foi registrado; **não** é essa a lógica correta).
 

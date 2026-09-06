@@ -9,7 +9,6 @@ using Fgc.Notifications.Lambda.Domain.Exceptions;
 using Fgc.Notifications.Lambda.Infrastructure.Email;
 using Fgc.Notifications.Lambda.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 using System.Text.Json;
 
@@ -53,8 +52,12 @@ public class Function
             dynamoDb = new AmazonDynamoDBClient(config);
         }
         var repository = new DynamoDbNotificationRepository(dynamoDb);
-        var emailSender = new LoggingEmailSender(NullLogger<LoggingEmailSender>.Instance);
-        return new NotificationService(repository, emailSender);
+        // O runtime Lambda captura stdout/stderr automaticamente para o CloudWatch Logs, e
+        // `sam local invoke` exibe no terminal - por isso um logger de console real (não
+        // NullLogger) já é suficiente para os logs de paridade aparecerem nos dois casos.
+        var loggerFactory = LoggerFactory.Create(builder => builder.AddSimpleConsole());
+        var emailSender = new LoggingEmailSender();
+        return new NotificationService(repository, emailSender, loggerFactory.CreateLogger<NotificationService>());
     }
 
     public async Task FunctionHandler(RabbitMQEvent rabbitMqEvent, ILambdaContext context)
@@ -100,7 +103,7 @@ public class Function
                     break;
 
                 case nameof(PaymentProcessedEvent):
-                    await HandlePaymentProcessedAsync(envelope.Message);
+                    await HandlePaymentProcessedAsync(envelope.Message, context);
                     break;
 
                 default:
@@ -125,13 +128,14 @@ public class Function
         return _notificationService.SendWelcomeEmailAsync(userCreated.Name, userCreated.Email);
     }
 
-    private Task HandlePaymentProcessedAsync(JsonElement message)
+    private Task HandlePaymentProcessedAsync(JsonElement message, ILambdaContext context)
     {
         var paymentProcessed = message.Deserialize<PaymentProcessedEvent>(JsonOptions)
             ?? throw new NotificationDomainException("PaymentProcessedEvent payload vazio.");
 
         if (paymentProcessed.Status != ApprovedStatus)
         {
+            context.Logger.LogWarning($"⚠️ [PAYMENT REJECTED] Payment {paymentProcessed.OrderedId} foi rejeitado.");
             return Task.CompletedTask;
         }
 
@@ -140,6 +144,7 @@ public class Function
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Converters = { new FlexibleDecimalJsonConverter() }
     };
 }
