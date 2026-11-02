@@ -22,13 +22,6 @@ src/
   Fgc.Notifications.Lambda.HistoryApi/           # Lambda 2 (GET /notifications via API Gateway)
 tests/Fgc.Notifications.Lambda.Tests/            # xUnit + Moq
 events/                                          # payloads sintéticos (formato real aws:rmq) p/ teste local
-deploy/
-  Dockerfile                                     # roda `samlocal build && deploy` contra o LocalStack
-  bridge/                                        # Dockerfile + drain-and-invoke.py: encaminha mensagens do
-                                                  # RabbitMQ local para o EventProcessor (LocalStack não emula
-                                                  # o event source mapping de Amazon MQ, ver seção abaixo)
-  logs/                                          # Dockerfile + tail-logs.sh: acompanha logs das funções no
-                                                  # LocalStack via docker.sock
 ```
 
 `UserCreatedEvent`/`PaymentProcessedEvent` usados aqui são cópias locais mantidas manualmente em `Fgc.Notifications.Lambda.Application/Events/` — este repositório **não** referencia o pacote NuGet compartilhado `Fgc.MessageContracts` (sem `nuget.config`/`LocalPackages` próprios), diferente de `fgc-users-api`/`fgc-catalog-api`/`fgc-payments-api`. Se a forma desses eventos mudar no pacote compartilhado, é preciso replicar a mudança aqui manualmente.
@@ -49,23 +42,9 @@ dotnet test tests/Fgc.Notifications.Lambda.Tests
 - Entrega "at-least-once": reprocessamento pode gerar notificações duplicadas — mesmo risco que já existia no container antigo (MassTransit também não garantia idempotência aqui).
 - `PubliclyAccessible: true` no broker evita exigir VPC/subnets (adequado ao escopo acadêmico); produção "de verdade" trocaria isso por acesso privado via VPC.
 
-## Teste local (LocalStack)
+## Teste local
 
-A emulação de Amazon MQ no LocalStack é exclusiva do plano Ultimate (pago), e **RabbitMQ não é suportado nem lá** (só ActiveMQ). Ou seja, o event source mapping em si nunca é testável de ponta a ponta localmente — isso é testado por **invocação direta** do `EventProcessorFunction` com um payload sintético no formato real documentado pela AWS (`aws:rmq`, `rmqMessagesByQueue`).
-
-O que **é** testável de ponta a ponta no LocalStack (`docker-compose up -d localstack` em `fgc-orchestration`, ou já de pé junto com o resto do stack):
-
-```bash
-export AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local AWS_DEFAULT_REGION=us-east-1
-
-# Só os recursos deployáveis no LocalStack Community (o broker Amazon MQ real fica fora)
-samlocal build
-samlocal deploy --resolve-s3 --stack-name fgc-notifications-lambda --capabilities CAPABILITY_IAM
-
-aws --endpoint-url=http://localhost:4566 dynamodb scan --table-name FgcNotifications
-```
-
-`AWS::AmazonMQ::Broker`/`AWS::Lambda::EventSourceMapping` já estão separados em `template-broker.yaml` (deployado só contra a AWS real, depois do stack de `template.yaml`) — `template.yaml` principal é 100% deployável no LocalStack sem eles.
+O event source mapping Amazon MQ → Lambda não é emulável localmente (o LocalStack não suporta RabbitMQ). Localmente o `EventProcessorFunction` é testado por **invocação direta** com payloads sintéticos no formato real documentado pela AWS (`aws:rmq`, `rmqMessagesByQueue`, em `events/`), contra o `dynamodb-local` do `docker-compose.yml` de `fgc-orchestration`. O fluxo completo broker → Lambda é validado na AWS real.
 
 ### Invocação direta do EventProcessor (trigger simulado)
 
@@ -83,7 +62,7 @@ sam local invoke EventProcessorFunction -e events/rabbitmq-payment-rejected.json
   },
   "HistoryApiFunction": {
     "DYNAMODB_LOCAL_ENDPOINT": "http://host.docker.internal:8500",
-    "JWT_KEY": "FgcUsers-Auth-JWT-Key-2026-Strong-And-Secure",
+    "JWT_KEY": "<mesmo valor de JWT_KEY do .env de fgc-orchestration>",
     "JWT_ISSUER": "Fgc.UsersAPI",
     "JWT_AUDIENCE": "Fgc.CatalogAPI"
   }

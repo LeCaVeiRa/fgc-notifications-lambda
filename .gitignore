@@ -364,3 +364,9 @@ FodyWeavers.xsd
 # AWS SAM build artifacts
 .aws-sam/
 samconfig.toml
+
+# Segredos locais
+.env
+.env.*
+!.env.example
+env.local.json
