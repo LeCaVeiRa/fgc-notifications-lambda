@@ -75,14 +75,11 @@ Após cada invocação, `aws dynamodb scan --endpoint-url http://localhost:8500 
 
 ## Deploy
 
-Contra AWS real, nessa ordem (o segundo template importa outputs exportados pelo primeiro):
+Na AWS real (região `us-east-2`), como parte de `fgc-orchestration/scripts/deploy-aws.sh`, depois do `terraform apply` de `fgc-infra/env`:
 
 ```bash
-sam deploy --guided --template-file template.yaml --stack-name fgc-notifications-lambda \
-  --parameter-overrides JwtKey=<mesma chave HS256 de fgc-users-api>
-
-sam deploy --guided --template-file template-broker.yaml --stack-name fgc-notifications-lambda-broker \
-  --parameter-overrides MainStackName=fgc-notifications-lambda
+sam build
+sam deploy --stack-name fgc-notifications-lambda --region us-east-2 --resolve-s3 --capabilities CAPABILITY_IAM   --parameter-overrides JwtKey=<JWT_KEY do secret fgc/lambda no Secrets Manager>
 ```
 
-A saída `BrokerAmqpEndpoint` (do segundo stack) deve ser propagada para `RabbitMq__Host`/`RabbitMq__Port` (5671) dos `k8s/configmap.yaml` de `fgc-users-api`/`fgc-catalog-api`; a saída `HistoryApiUrl` (do primeiro stack) deve ser propagada para `NOTIFICATIONS_HISTORY_URL` do Kong em `fgc-orchestration`.
+Depois, `terraform apply` em `fgc-infra/messaging` cria a fila `notifications-lambda`, os binds às exchanges `Fgc.MessageContracts.Events:UserCreatedEvent`/`:PaymentProcessedEvent` e o Event Source Mapping Amazon MQ → `EventProcessorFunction`. O broker em si é criado em `fgc-infra/env/mq.tf`. A saída `HistoryApiUrl` deste stack vira `NOTIFICATIONS_HISTORY_URL` do Kong (ConfigMap `fgc-kong-runtime`).

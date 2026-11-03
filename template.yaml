@@ -4,9 +4,8 @@ Description: >
   fgc-notifications-lambda - substitui o container fgc-notifications-api por duas funções
   Lambda .NET 8: EventProcessor (acionada por Event Source Mapping no Amazon MQ / RabbitMQ)
   e HistoryApi (GET /notifications via API Gateway, autorização Admin dentro da própria Lambda).
-  Broker Amazon MQ e EventSourceMapping ficam em template-broker.yaml (ver esse arquivo) -
-  não são suportados pelo LocalStack, então este template principal precisa continuar
-  100% deployável localmente sem eles.
+  Broker Amazon MQ, fila notifications-lambda e EventSourceMapping ficam no Terraform
+  (fgc-infra/env/mq.tf e fgc-infra/messaging), aplicado depois deste stack.
 
 Parameters:
   JwtKey:
@@ -82,12 +81,12 @@ Outputs:
   HistoryApiUrl:
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/notifications"
   EventProcessorFunctionArn:
-    Description: Consumido por template-broker.yaml (EventSourceMapping.FunctionName).
+    Description: Consumido por fgc-infra/messaging (aws_lambda_event_source_mapping).
     Value: !GetAtt EventProcessorFunction.Arn
     Export:
       Name: !Sub "${AWS::StackName}-EventProcessorFunctionArn"
   EventProcessorFunctionRoleName:
-    Description: Consumido por template-broker.yaml (para anexar a policy secretsmanager:GetSecretValue).
+    Description: Consumido por fgc-infra/messaging (policy de leitura do Amazon MQ e do secret fgc/mq).
     Value: !Ref EventProcessorFunctionRole
     Export:
       Name: !Sub "${AWS::StackName}-EventProcessorFunctionRoleName"
